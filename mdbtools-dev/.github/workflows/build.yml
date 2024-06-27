@@ -1,0 +1,155 @@
+name: build
+on: [ push, pull_request ]
+env:
+  TEST_DATA_URL: https://github.com/mdbtools/mdbtestdata/archive/refs/heads/master.tar.gz
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ clang, gcc, gcc-9, gcc-10 ]
+        iconv: [ enable-iconv, disable-iconv]
+        glib: [ enable-glib, disable-glib ]
+    steps:
+      - name: Install packages
+        run: sudo apt install gettext
+      - uses: actions/checkout@v2
+      - name: Fetch test data
+        run: |
+          rm -rf test
+          mkdir test
+          curl -sSLf "$TEST_DATA_URL" | tar xz --strip-components=1 -C test
+      - name: Autoconf
+        run: autoreconf -i -f
+      - name: Configure
+        run: ./configure --disable-silent-rules --${{ matrix.glib }} --${{ matrix.iconv }} --with-unixodbc=/usr
+        env:
+          CC: ${{ matrix.compiler }}
+      - name: Make
+        run: make
+      - name: CLI tests
+        run: ./test_script.sh --github
+      - name: SQL tests
+        run: bash -e -x ./test_sql.sh
+      - name: ODBC tests
+        run: ./src/odbc/unittest
+        env:
+          MDBPATH: test/data
+      - name: pkg-config libmdb test
+        run: pkg-config libmdb --exists
+        env:
+          PKG_CONFIG_PATH: .
+      - name: pkg-config libmdbsql test
+        run: pkg-config libmdbsql --exists
+        env:
+          PKG_CONFIG_PATH: .
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ clang, gcc ]
+        iconv: [ enable-iconv, disable-iconv]
+        glib: [ enable-glib, disable-glib ]
+    steps:
+      - name: Install packages
+        run: brew install bison gawk automake libtool unixodbc
+      - uses: actions/checkout@v2
+      - name: Fetch test data
+        run: |
+          rm -rf test
+          mkdir test
+          curl -sSLf "$TEST_DATA_URL" | tar xz --strip-components=1 -C test
+      - name: Autoconf
+        run: autoreconf -i -f
+      - name: Configure
+        run: ./configure --disable-silent-rules --${{ matrix.glib }} --${{ matrix.iconv }} --with-unixodbc=/opt/homebrew/opt/unixodbc
+        env:
+          CC: ${{ matrix.compiler }}
+          YACC: /opt/homebrew/opt/bison/bin/bison
+      - name: Make
+        run: make
+      - name: CLI tests
+        run: ./test_script.sh --github
+      - name: SQL tests
+        run: bash -e -x ./test_sql.sh
+      - name: ODBC tests
+        run: ./src/odbc/unittest
+        env:
+          MDBPATH: test/data
+      - name: pkg-config libmdb test
+        run: pkg-config libmdb --exists
+        env:
+          PKG_CONFIG_PATH: .
+      - name: pkg-config libmdbsql test
+        run: pkg-config libmdbsql --exists
+        env:
+          PKG_CONFIG_PATH: .
+  macos-iodbc:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ clang, gcc ]
+        glib: [ enable-glib, disable-glib ]
+    steps:
+      - name: Install packages
+        run: brew install bison gawk automake libtool libiodbc
+      - name: Add path
+        run: echo /opt/homebrew/opt/libiodbc/bin >> $GITHUB_PATH
+      - uses: actions/checkout@v2
+      - name: Fetch test data
+        run: |
+          rm -rf test
+          mkdir test
+          curl -sSLf "$TEST_DATA_URL" | tar xz --strip-components=1 -C test
+      - name: Autoconf
+        run: autoreconf -i -f
+      - name: Configure
+        run: ./configure --disable-silent-rules --${{ matrix.glib }} --with-iodbc=/opt/homebrew/opt/libiodbc
+        env:
+          CC: ${{ matrix.compiler }}
+          YACC: /opt/homebrew/opt/bison/bin/bison
+      - name: Make
+        run: make
+      - name: ODBC tests
+        run: ./src/odbc/unittest
+        env:
+          MDBPATH: test/data
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        iconv: [ enable-iconv, disable-iconv]
+        glib: [ enable-glib, disable-glib ]
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            autotools
+            base-devel
+            gcc
+            git
+            glib2-devel
+      - uses: actions/checkout@v2
+      - name: Fetch test data
+        run: |
+          rm -rf test
+          mkdir test
+          curl -sSLf "$TEST_DATA_URL" | tar xz --strip-components=1 -C test
+      - name: Autoconf
+        run: autoreconf -i -f
+      - name: Configure
+        run: ./configure --${{ matrix.glib }} --${{ matrix.iconv }}
+      - name: Make
+        run: make
+      - name: Test
+        run: ./test_script.sh --github
+      - name: SQL Test
+        run: bash -e -x ./test_sql.sh
